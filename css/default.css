@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Hubot+Sans:ital,wght@0,200..900;1,200..900&family=Cairo+Play:wght@200..1000&display=swap');
+
+/* DEFAULT THEME */
+:root {
+  --bg-color: #1a1a1a;
+  --text-primary: #ffffff;
+  --text-secondary: #aaaaaa;
+  --card-bg: transparent;
+  --card-hover-bg: #333333;
+  --card-shadow: rgba(0, 0, 0, 0);
+
+  --accent-color: #e50914; /* Used for buttons, badges, errors */
+  --accent-hover: #f40612;
+  --badge-text: #ffffff;
+
+  --nav-btn-bg: rgba(0, 0, 0, 0.7);
+  --nav-btn-text: #ffffff;
+  --nav-btn-border: #ffffff;
+  --nav-btn-hover-bg: #ffffff;
+  --nav-btn-hover-text: #000000;
+
+  --banner-overlay-color: rgba(34, 34, 34, 0.5);
+  --banner-overlay-heavy: rgba(10, 10, 10, 0.85);
+
+  --desc-bg: rgba(0, 0, 0, 0.5);
+  --desc-text: #f1f1f1;
+
+  --font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+
+  /* Structural & Animation Variables (Themeable) */
+  --card-radius: 0;
+  --card-border: none;
+  --card-hover-transform: translateY(-2px);
+  --card-transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
+
+  --banner-radius: 0;
+  --badge-radius: 5px;
+  --desc-radius: 8px;
+
+  --btn-radius: 5px;
+  --btn-border: none;
+  --nav-btn-radius: 20px;
+  --rotate-btn-radius: 5px;
+}
+
+/* Base resets handled in CSS variables */
+body {
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+}
+
+h1, .card-title {
+  color: var(--text-primary);
+  font-family: 'Hubot Sans', sans-serif;
+}
+
+.card-date {
+    font-family: 'Cairo Play', monospace, sans-serif;
+}
+
+.card {
+  background-color: var(--card-bg);
+  box-shadow: 0 4px 15px var(--card-shadow);
+  overflow: visible;
+  /* outline: transparent solid 2px; */
+}
+/* .card:hover {
+    background-color: var(--card-hover-bg);
+    box-shadow: 0 6px 20px rgba(229, 9, 20, 0.4);
+    outline: #f1f1f1 solid 2px;
+} */
+.card .card-img-container {
+  position: relative;
+  outline: transparent solid 0px;
+  transform-origin: top center;
+  transition:
+    outline 0.3s ease,
+    transform 0.3s cubic-bezier(0.175, 0.4, 0.32, 1.2),
+    box-shadow 0.3s ease;
+}
+
+.card .card-img-container::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  /* Sharper diagonal light reflection */
+  background: linear-gradient(
+    225deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  opacity: 0.25;
+  /* Start translated out to the top right */
+  transform: translate(20%, -20%);
+  transition: opacity 0.3s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.card:hover .card-img-container {
+  outline: #fff solid 2px;
+  /* Adds a 3D perspective, slightly scales it up, and tilts the bottom towards the user */
+  transform: perspective(1600px) scale(1.01) rotateX(8deg);
+  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.6);
+}
+
+.card:hover .card-img-container::after {
+  opacity: 1;
+  /* Move the shine inwards across the card as it animates */
+  transform: translate(15%, -15%);
+}
+
+.card-title {
+  color: var(--text-primary);
+}
+.card-date,
+.card-run {
+  color: var(--text-secondary);
+}
+
+.btn {
+  background-color: var(--accent-color);
+  color: var(--badge-text);
+}
+.btn:hover {
+  background-color: var(--accent-hover);
+}
+
+.run-badge {
+  background: var(--accent-color);
+  color: var(--badge-text);
+}
+
+.back-btn {
+  background-color: var(--nav-btn-bg);
+  color: var(--nav-btn-text);
+  border-color: var(--nav-btn-border);
+}
+.back-btn:hover {
+  background-color: var(--nav-btn-hover-bg);
+  color: var(--nav-btn-hover-text);
+}
+
+.rotate-btn {
+  background-color: var(--card-hover-bg);
+  color: var(--text-primary);
+  border-color: var(--card-shadow);
+}
+.rotate-btn.active {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.description {
+  background: var(--desc-bg);
+  color: var(--desc-text);
+}
+
+.author, .penciller {
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 5px;
+}
+
+#loading-text {
+  color: var(--accent-color);
+}
+
+.end-screen {
+  background-color: #111111;
+}

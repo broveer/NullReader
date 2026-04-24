@@ -1,0 +1,20 @@
+readStatus.json
+libraryData.js
+RenameHelper.ps1
+
+# --- Python & System Junk ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# --- IDE & OS Junk ---
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+collections/
+css/old-school.css

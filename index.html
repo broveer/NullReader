@@ -1,0 +1,1719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Comic Reader</title>
+    <!-- Include JSZip for direct CBZ reading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- Base Layout CSS -->
+    <style>
+        /* Base Resets are handled by the dynamically loaded Theme */
+        body {
+            overflow: hidden; 
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        #app {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: transform 0.3s, left 0.3s, top 0.3s, width 0.3s, height 0.3s;
+        }
+
+        /* Views */
+        #home-screen, #series-screen, #reader-screen {
+            display: none;
+            padding: 20px;
+        }
+
+        #home-screen.active, #series-screen.active, #reader-screen.active {
+            display: block;
+        }
+
+        /* Header items */
+        h1 { margin-bottom: 2rem; }
+        
+        .banner {
+            padding: 60px 20px;
+            border-radius: var(--banner-radius, 12px);
+            margin-bottom: 30px;
+            background-size: cover;
+            background-position: center;
+            background-blend-mode: multiply;
+            box-shadow: inset 0 0 100px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        .banner h1 { 
+            font-size: 3rem; 
+            margin: 0; 
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
+        }
+
+        .run-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: var(--badge-radius, 5px);
+            font-weight: bold;
+            margin-top: 10px;
+            box-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+        }
+
+        .description { 
+            max-width: 800px; 
+            margin: 20px auto 0 auto; 
+            font-size: 1.1rem; 
+            line-height: 1.5;
+            padding: 15px;
+            border-radius: var(--desc-radius, 8px);
+            backdrop-filter: blur(5px);
+        }
+
+        /* Grids and Cards */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 25px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            border-radius: var(--card-radius, 12px);
+            border: var(--card-border, none);
+            cursor: pointer;
+            overflow: hidden;
+            transition: var(--card-transition, transform 0.2s, background-color 0.2s, box-shadow 0.2s);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover { transform: var(--card-hover-transform, scale(1.05)); }
+        
+        .card-img-container {
+            width: 100%;
+            aspect-ratio: 2/3;
+            background-color: #111;
+            overflow: hidden;
+        }
+
+        .card-img-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .card-info {
+            padding: 15px;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+        
+        .card-run {
+            font-size: 0.95rem;
+            font-style: italic;
+        }
+
+        .card-date {
+            font-size: 0.85rem;
+        }
+
+        /* Reader styles */
+        #comic-container { width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; transition: max-width 0.3s ease; }
+        .end-screen { padding: 50px 20px; margin-top: 20px; }
+
+        /* Fit Width Overrides */
+        #reader-screen.fit-width { padding-left: 0 !important; padding-right: 0 !important; }
+        #comic-container.fit-width { max-width: 100% !important; }
+
+        #loading-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 50px;
+            display: none;
+        }
+
+        #comic-container img { 
+            max-width: 100%; width: 100%; display: block; margin: 0; padding: 0; 
+        }
+
+        /* Read status */
+        .card.read .card-img-container {  filter: grayscale(0.8) brightness(0.5); }
+        .card.read .card-title { color: var(--text-secondary); }
+
+        /* Context Menu */
+        #context-menu {
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            background: var(--card-bg);
+            border: 1px solid var(--card-shadow);
+            border-radius: var(--btn-radius, 5px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            padding: 5px 0;
+            min-width: 150px;
+        }
+        .context-item {
+            padding: 10px 20px;
+            cursor: pointer;
+            color: var(--text-primary);
+            text-align: left;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        .context-item:hover {
+            background: var(--card-hover-bg);
+        }
+
+        /* Utilities */
+        .btn { border: var(--btn-border, none); padding: 15px 30px; font-size: 1.2rem; border-radius: var(--btn-radius, 5px); cursor: pointer; transition: background 0.3s; }
+        
+        .nav-controls { position: fixed; top: 20px; left: 20px; z-index: 100; display: flex; gap: 10px; }
+        .back-btn { border: 2px solid; padding: 10px 20px; border-radius: var(--nav-btn-radius, 20px); cursor: pointer; font-weight: bold; transition: background 0.3s, color 0.3s; }
+
+        /* Rotation */
+        #app.rot-90 { transform: rotate(90deg); transform-origin: top left; top: 0; left: 100vw; width: 100vh; height: 100vw; }
+        #app.rot-270 { transform: rotate(-90deg); transform-origin: top left; top: 100vh; left: 0; width: 100vh; height: 100vw; }
+        
+        .rotate-controls { margin: 20px 0; display: flex; justify-content: center; gap: 15px; }
+        .rotate-btn { border: 2px solid; padding: 10px 20px; border-radius: var(--rotate-btn-radius, 5px); cursor: pointer; transition: background 0.3s, border-color 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Progress Bar */
+        #progress-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            height: 5px;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+        }
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--text-primary, #fff);
+            transition: width 0.1s;
+        }
+
+        /* Bookshelf UI */
+        .bookshelf {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 20px;
+            margin: 40px auto;
+            max-width: 1400px;
+            min-height: 350px;
+            background: linear-gradient(to bottom, transparent 95%, #4a2e15 95%);
+            border-bottom: 35px solid #3c2410;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        
+        .book-spine {
+            width: 70px;
+            height: 320px;
+            background-color: var(--card-bg, #333);
+            border-radius: 2px 5px 5px 2px;
+            border-left: 2px solid rgba(255,255,255,0.2);
+            border-right: 3px solid rgba(0,0,0,0.5);
+            box-shadow: -2px 0 5px rgba(0,0,0,0.5) inset, 2px 2px 5px rgba(0,0,0,0.4);
+            cursor: pointer;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s, box-shadow 0.2s, top 0.2s;
+            user-select: none;
+            top: 0;
+            overflow: hidden;
+            
+            /* Text Orientation */
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            text-align: center;
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: bold;
+            padding: 10px 0;
+        }
+
+        .book-spine:hover {
+            transform: translateY(-8px);
+            /* box-shadow: -2px 0 5px rgba(0,0,0,0.5) inset, 0 10px 15px rgba(0,0,0,0.6); */
+            z-index: 10;
+        }
+
+        .book-spine.dragging {
+            opacity: 0.5;
+            box-shadow: none;
+            transform: scale(0.95);
+        }
+        
+        .bookshelf-title-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Default Book Colors */
+        .color-0 { background: #8B0000; }
+        .color-1 { background: #00008B; }
+        .color-2 { background: #4B0082; }
+        .color-3 { background: #006400; }
+        .color-4 { background: #483D8B; }
+        .color-5 { background: #2F4F4F; }
+        .color-6 { background: #800000; }
+
+        /* SPINE EDITOR UI */
+        #spine-editor-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: var(--card-bg, #1a1a1a);
+            z-index: 2000;
+            display: none;
+            flex-direction: row;
+        }
+
+        #spine-editor-screen.active {
+            display: flex;
+        }
+
+        .editor-sidebar {
+            width: 400px;
+            background: #222;
+            border-right: 2px solid #333;
+            padding: 20px;
+            overflow-y: auto;
+            text-align: left;
+        }
+
+        .editor-preview {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            overflow-x: auto;
+        }
+        
+        .editor-form-group {
+            margin-bottom: 20px;
+        }
+        .editor-form-group label {
+            display: block; font-weight: bold; margin-bottom: 5px; color: #ddd; font-size: 0.9rem;
+        }
+        .editor-form-group input, .editor-form-group select, .editor-form-group textarea {
+            width: 100%; padding: 8px; box-sizing: border-box; border-radius: 4px; border: 1px solid #444; background: #333; color: white;
+        }
+        .editor-form-group textarea { resize: vertical; min-height: 50px; font-family: monospace; }
+        .editor-form-group .hint { font-size: 0.8rem; color: #888; margin-top: 3px; display: block; }
+        
+        .editor-section {
+            background: #2a2a2a; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .editor-section h3 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 15px; font-size: 1.1rem; }
+
+        .close-editor-btn {
+            position: absolute; top: 20px; right: 20px; z-index: 2010;
+        }
+
+        /* End Bookshelf UI */
+
+        /* Search Bar */
+        #search-container {
+            margin: 20px auto 40px auto;
+            max-width: 600px;
+            display: flex;
+            justify-content: center;
+        }
+        #search-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2rem;
+            border-radius: var(--nav-btn-radius, 20px);
+            border: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            background: var(--card-bg, #2a2a2a);
+            color: var(--text-primary, #fff);
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Context Menu Right-Click Component -->
+    <div id="context-menu">
+        <div class="context-item" id="ctx-read" onclick="setReadStatus(true)">Mark as Read</div>
+        <div class="context-item" id="ctx-unread" onclick="setReadStatus(false)">Mark as Unread</div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+    
+    <div id="app">
+        <!-- HOME SCREEN: SERIES SELECTION -->
+        <div id="home-screen" class="active">
+            <h1 style="margin-top: 40px;">My Comic Library</h1>
+            <div id="search-container">
+                <input type="text" id="search-input" placeholder="Search series, characters, description..." onkeyup="filterHome(this.value)">
+            </div>
+            <div class="grid-container" id="series-list"></div>
+        </div>
+
+        <!-- SERIES SCREEN: ISSUE SELECTION -->
+        <div id="series-screen">
+            <div class="nav-controls">
+                <button class="back-btn" onclick="goBackFromSeries()">&#8592; Back</button>
+            </div>
+            
+            <div class="banner" id="series-banner">
+                <h1 id="series-title">Series Name</h1>
+                <div class="run-badge" id="series-run"></div>
+                <p class="description" id="series-desc"></p>
+                <div class="author" id="series-author"></div>
+                <div class="penciller" id="series-penciller"></div>
+            </div>
+            
+            <div style="margin: 0 auto; max-width: 1200px; text-align: right; padding: 0 20px;">
+                <label id="series-sort-label" style="font-weight: bold; margin-right: 10px;">Sort By:</label>
+                <select id="series-sort" onchange="renderSeries(currentSeriesIndex)" style="padding: 10px; font-weight: bold; border-radius: var(--btn-radius, 5px); cursor: pointer; border: none; background: var(--card-bg); color: var(--text-primary); box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    <option value="date-asc">Date (Oldest First)</option>
+                    <option value="date-desc">Date (Newest First)</option>
+                    <option value="title-asc">Title (A-Z)</option>
+                </select>
+                
+                <button id="toggle-bookshelf-btn" style="display: none; margin-left: 20px; padding: 10px 20px; font-weight: bold; border-radius: var(--btn-radius, 5px); cursor: pointer; border: none; background: var(--accent-color, #e50914); color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2);" onclick="toggleBookshelfView()">Regular View</button>
+            </div>
+
+            <div class="grid-container" id="issues-list"></div>
+        </div>
+
+        <!-- READER SCREEN -->
+        <div id="reader-screen">
+            <div class="nav-controls" id="reader-controls">
+                <button class="back-btn" onclick="goBackToSeries()">&#8592; Back</button>
+                <button class="back-btn" id="fit-width-btn" onclick="toggleFitWidth()">Fit Width</button>
+                <button class="btn" id="binge-btn" style="display: none; padding: 10px 20px; border-radius: var(--nav-btn-radius, 20px); box-shadow: 0 4px 15px rgba(229, 9, 20, 0.4);" onclick="goToNextIssue()">Read Next Issue &#8594;</button>
+            </div>
+            
+            <br><br><br>
+            <div class="rotate-controls">
+                <button class="rotate-btn" id="btn-rot-270" onclick="setRotation(-90)">⟲ Rotate Left</button>
+                <button class="rotate-btn active" id="btn-rot-0" onclick="setRotation(0)">Default View</button>
+                <button class="rotate-btn" id="btn-rot-90" onclick="setRotation(90)">Rotate Right ⟳</button>
+            </div>
+
+            <div id="loading-text">Extracting Issue dynamically, please wait...</div>
+            <div id="comic-container"></div>
+            
+            <div class="end-screen">
+                <h2>END OF ISSUE</h2>
+                <button class="btn" style="margin-top: 20px; margin-right: 10px;" onclick="goBackToSeries()">Back to Issues</button>
+                <button class="btn" id="end-binge-btn" style="display: none; margin-top: 20px;" onclick="goToNextIssue()">Read Next Issue &#8594;</button>
+            </div>
+        <!-- END READER SCREEN -->
+
+    </div>
+
+    <!-- SPINE EDITOR SCREEN -->
+    <div id="spine-editor-screen">
+        <button class="back-btn close-editor-btn" onclick="closeSpineEditor()">&#10005; Cancel</button>
+            <div class="editor-sidebar" id="spine-editor-sidebar">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; padding: 0;">Spine Editor</h2>
+                    <button class="btn" style="padding: 10px 20px; font-size: 1rem; background: #e50914; color: white;" onclick="saveSpineEditorChanges()">Apply & Save</button>
+                </div>
+                
+                <div class="editor-section">
+                    <h3>1. Size & Shape</h3>
+                    <div class="editor-form-group">
+                        <label>Spine Width Mode</label>
+                        <select id="spine-widthMode" onchange="renderSpinePreview()">
+                            <option value="auto">Auto (Scales by Issue Count)</option>
+                            <option value="manual">Manual (Set specific px widths)</option>
+                        </select>
+                        <span class="hint">Auto expands omnibus books naturally.</span>
+                    </div>
+                    <div class="editor-form-group" id="manual-widths-group" style="display: none;">
+                        <label>Manual Width Overrides (px)</label>
+                        <textarea id="spine-manualWidths" placeholder="e.g. 50|60|100|40" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Pipe (|) separated pixel values starting from the first book in the collection.</span>
+                    </div>
+                </div>
+
+                <div class="editor-section">
+                    <h3>2. Titles & Text</h3>
+                    <div class="editor-form-group">
+                        <label>Title Template</label>
+                        <input type="text" id="spine-titleTemplate" value="$Title" oninput="renderSpinePreview()">
+                        <span class="hint">Use $Title to grab from config.json. E.g. "Ultimate $Title".</span>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Title Overrides</label>
+                        <textarea id="spine-titleOverrides" placeholder="Ultimate Spider-Man|Ultimate X-Men|Extra Spine" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Pipe (|) separated direct text replacements per book.</span>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Author / Collaborator Format</label>
+                        <input type="text" id="spine-authorTemplate" value="$Author[0] | $Penciller[0]" oninput="renderSpinePreview()">
+                        <span class="hint">e.g. "$Author[0] | $Penciller[0]" or "Written by $Author[0]"</span>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Author Overrides</label>
+                        <textarea id="spine-authorOverrides" placeholder="Hickman|Bendis|Stan Lee" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Pipe (|) separated overrides per book.</span>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Numbering System</label>
+                        <select id="spine-numberingStyle" onchange="renderSpinePreview()">
+                            <option value="none">None</option>
+                            <option value="hash">Hash (#1)</option>
+                            <option value="vol">Volume (Vol 1)</option>
+                            <option value="book">Book (Bk 1)</option>
+                        </select>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Number Overrides</label>
+                        <textarea id="spine-customNumbers" placeholder="#1|#1A|#0" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Pipe (|) separated text replacements.</span>
+                    </div>
+                </div>
+
+                <div class="editor-section">
+                    <h3>3. Typography</h3>
+                    <div class="editor-form-group">
+                        <label>Google Font URL</label>
+                        <input type="text" id="spine-fontUrl" placeholder="https://fonts.googleapis.com/css2?family=Oswald&display=swap" oninput="renderSpinePreview()">
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Font Family Name</label>
+                        <input type="text" id="spine-fontFamily" placeholder="Oswald" oninput="renderSpinePreview()">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div class="editor-form-group">
+                            <label>Text Color</label>
+                            <input type="color" id="spine-fontColor" value="#ffffff" oninput="renderSpinePreview()" style="height: 40px; padding: 2px;">
+                        </div>
+                        <div class="editor-form-group">
+                            <label>Size (CSS)</label>
+                            <input type="text" id="spine-fontSize" value="0.9rem" oninput="renderSpinePreview()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="editor-section">
+                    <h3>4. Backgrounds & Color</h3>
+                    <div class="editor-form-group">
+                        <label>Base Background</label>
+                        <input type="text" id="spine-bg" placeholder="e.g. #ff0000 or linear-gradient(...)" oninput="renderSpinePreview()">
+                        <span class="hint">If blank, defaults to alternating row colors.</span>
+                    </div>
+                    <div class="editor-form-group">
+                        <label>Background Overrides</label>
+                        <textarea id="spine-bgOverrides" placeholder="#ff0000|#0000ff|url('logopattern.jpg')" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Pipe (|) separated custom CSS per book.</span>
+                    </div>
+                </div>
+
+                <div class="editor-section">
+                    <h3>5. Advanced</h3>
+                    <div class="editor-form-group">
+                        <label>Custom CSS</label>
+                        <textarea id="spine-customCss" placeholder="e.g. border: 2px solid gold; box-shadow: 0 0 10px red;" oninput="renderSpinePreview()"></textarea>
+                        <span class="hint">Applied directly to the spine elements.</span>
+                    </div>
+                </div>
+                
+                <br><br><br>
+            </div>
+        <div class="editor-preview">
+            <div class="bookshelf" id="spine-editor-preview-container" style="margin: 0; min-height: 400px; transform: scale(1.1);">
+                <!-- Live Spines rendered here -->
+            </div>
+        </div>
+    </div>
+    <!-- END SPINE EDITOR SCREEN -->
+
+    <!-- Generated JS Data -->
+    <script src="libraryData.js"></script>
+
+    <script>
+        let currentRotation = 0;
+        let currentSeriesIndex = -1;
+        let currentCollectionIndex = -1;
+        let currentIssueIndex = -1;
+        let contextTargetCbz = null;
+        let bingeObserver = null;
+        const memoryBlobs = []; 
+        
+        let editorActiveCollectionIndex = -1;
+        let editorLiveConfig = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 1. Fetch Preferences to apply custom theme
+            try {
+                const prefsRes = await fetch(`preferences.json?t=${Date.now()}`);
+                if (prefsRes.ok) {
+                    const prefs = await prefsRes.json();
+                    if (prefs.theme) {
+                        const link = document.createElement('link');
+                        link.rel = 'stylesheet';
+                        link.href = `css/${prefs.theme}?t=${Date.now()}`;
+                        document.head.appendChild(link);
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not load preferences.json', e);
+            }
+
+            // 2. Load Server Read Status
+            await loadServerReadStatus();
+
+            // 3. Load Library
+            if (typeof libraryData !== 'undefined' && libraryData.length > 0) {
+                // Intercept hash routing
+                window.addEventListener('hashchange', handleHash);
+                if (window.location.hash) {
+                    handleHash();
+                } else {
+                    window.location.hash = 'home';
+                }
+            } else {
+                document.getElementById('home-screen').innerHTML = "<h3 style='color:#ff4c4c; padding:40px;'>Library empty or failed. Make sure you run 'RunReader.bat' to start the server correctly!</h3>";
+            }
+        });
+
+        // -------------------------
+        // CACHE READING DATA (with server sync)
+        // -------------------------
+        let serverReadStatus = {};
+
+        async function loadServerReadStatus() {
+            try {
+                const res = await fetch('readStatus.json?t=' + Date.now());
+                if (res.ok) serverReadStatus = await res.json();
+            } catch (e) {
+                console.log('No server read status available');
+            }
+        }
+
+        function getReadIssues() {
+            const local = JSON.parse(localStorage.getItem('comic_read_status')) || {};
+            return { ...serverReadStatus, ...local }; // local overrides server
+        }
+
+        async function markIssue(cbzPath, isRead) {
+            const data = getReadIssues();
+            if (isRead) data[cbzPath] = true;
+            else delete data[cbzPath];
+            localStorage.setItem('comic_read_status', JSON.stringify(data));
+            
+            // Sync to server
+            try {
+                await fetch('/api/readstatus', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } catch (e) {
+                console.log('Could not sync read status to server');
+            }
+        }
+
+        // -------------------------
+        // SCROLL POSITION TRACKING
+        // -------------------------
+        function saveSeriesScrollPos(seriesIndex) {
+            const scrollPos = document.getElementById('app').scrollTop;
+            sessionStorage.setItem(`series_scroll_${seriesIndex}`, scrollPos);
+        }
+
+        function restoreSeriesScrollPos(seriesIndex) {
+            const scrollPos = sessionStorage.getItem(`series_scroll_${seriesIndex}`);
+            if (scrollPos) {
+                setTimeout(() => {
+                    document.getElementById('app').scrollTop = parseInt(scrollPos);
+                }, 100);
+            }
+        }
+
+        // -------------------------
+        // ROUTING SYSTEM
+        // -------------------------
+        function handleHash() {
+            const hash = window.location.hash.slice(1);
+            if (!hash || hash === 'home') {
+                currentCollectionIndex = -1;
+                renderHome();
+                showView('home-screen');
+                document.getElementById('app').scrollTo(0, 0);
+            } else if (hash.startsWith('collection/') && hash.includes('/series/')) {
+                // /collection/{collectionIndex}/series/{seriesIndex}
+                const parts = hash.split('/');
+                const collIndex = parseInt(parts[1]);
+                const seriesIndex = parseInt(parts[3]);
+                
+                if (!isNaN(collIndex) && !isNaN(seriesIndex)) {
+                    currentCollectionIndex = collIndex;
+                    currentSeriesIndex = seriesIndex;
+                    renderSeries(seriesIndex);
+                    restoreSeriesScrollPos(seriesIndex);
+                } else {
+                    window.location.hash = 'home';
+                }
+            } else if (hash.startsWith('collection/')) {
+                // /collection/{collectionIndex}
+                const index = parseInt(hash.split('/')[1]);
+                if (!isNaN(index) && index >= 0 && index < libraryData.length) {
+                    currentCollectionIndex = index;
+                    currentSeriesIndex = -1;
+                    renderCollection(index);
+                    restoreSeriesScrollPos(index);
+                } else {
+                    window.location.hash = 'home';
+                }
+            } else if (hash.startsWith('series/')) {
+                const index = parseInt(hash.split('/')[1]);
+                if (!isNaN(index) && index >= 0 && index < libraryData.length) {
+                    currentCollectionIndex = -1;
+                    currentSeriesIndex = index;
+                    renderSeries(index);
+                    restoreSeriesScrollPos(index);
+                } else {
+                    window.location.hash = 'home';
+                }
+            } else if (hash.startsWith('reader/collection/')) {
+                const parts = hash.split('/');
+                const collIdx = parseInt(parts[2]);
+                const seriesIdx = parseInt(parts[3]);
+                const issueIdx = parseInt(parts[4]);
+                if (!isNaN(collIdx) && !isNaN(seriesIdx) && !isNaN(issueIdx)) {
+                    currentCollectionIndex = collIdx;
+                    currentSeriesIndex = seriesIdx;
+                    currentIssueIndex = issueIdx;
+                    const issue = libraryData[seriesIdx].issues[issueIdx];
+                    if (issue) openComicReader(issue.comic);
+                }
+            } else if (hash.startsWith('reader/')) {
+                const parts = hash.split('/');
+                const seriesIdx = parseInt(parts[1]);
+                const issueIdx = parseInt(parts[2]);
+                if (!isNaN(seriesIdx) && !isNaN(issueIdx)) {
+                    currentCollectionIndex = -1;
+                    currentSeriesIndex = seriesIdx;
+                    currentIssueIndex = issueIdx;
+                    const issue = libraryData[seriesIdx].issues[issueIdx];
+                    if (issue) openComicReader(issue.comic);
+                }
+            }
+        }
+        
+        function goBackToSeries() {
+            if (currentCollectionIndex >= 0 && currentSeriesIndex >= 0) {
+                window.location.hash = `collection/${currentCollectionIndex}/series/${currentSeriesIndex}`;
+            } else if (currentSeriesIndex >= 0) {
+                window.location.hash = `series/${currentSeriesIndex}`;
+            } else {
+                window.location.hash = `home`;
+            }
+        }
+        
+        function goBackFromSeries() {
+            if (currentCollectionIndex >= 0 && currentSeriesIndex >= 0) {
+                window.location.hash = `collection/${currentCollectionIndex}`;
+            } else {
+                window.location.hash = `home`;
+            }
+        }
+
+        // -------------------------
+        // DATES & UTILS
+        // -------------------------
+        function formatDate(dateStr) {
+            if (!dateStr || dateStr.length !== 8) return "";
+            const year = dateStr.substring(0, 4);
+            const month = dateStr.substring(4, 6);
+            const day = dateStr.substring(6, 8);
+            const dateObj = new Date(year, parseInt(month)-1, day);
+            return dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function showView(viewId) {
+            // Clean up memory if leaving reader
+            if (viewId !== 'reader-screen') {
+                 if (memoryBlobs.length > 0) {
+                     document.getElementById('comic-container').innerHTML = '';
+                     memoryBlobs.forEach(url => URL.revokeObjectURL(url));
+                     memoryBlobs.length = 0;
+                 }
+                 document.getElementById('progress-container').style.display = 'none';
+            } else {
+                 document.getElementById('progress-container').style.display = 'block';
+                 document.getElementById('progress-bar').style.width = '0%';
+            }
+
+            document.getElementById('home-screen').classList.remove('active');
+            document.getElementById('series-screen').classList.remove('active');
+            document.getElementById('reader-screen').classList.remove('active');
+            
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        // -------------------------
+        // CONTEXT MENU SYSTEM
+        // -------------------------
+        document.addEventListener('click', () => {
+            document.getElementById('context-menu').style.display = 'none';
+        });
+
+        // -------------------------
+        // PROGRESS BAR & SCROLLING
+        // -------------------------
+        document.getElementById('app').addEventListener('scroll', () => {
+            if (document.getElementById('reader-screen').classList.contains('active')) {
+                const app = document.getElementById('app');
+                const scrollPercent = (app.scrollTop / (app.scrollHeight - app.clientHeight)) * 100;
+                document.getElementById('progress-bar').style.width = scrollPercent + '%';
+            }
+        });
+
+        // Track keys for scrolling (Volume buttons on some mobile browsers, arrows/space for desktop)
+        window.addEventListener('keydown', (e) => {
+            if (!document.getElementById('reader-screen').classList.contains('active')) return;
+            
+            // Map common scroll-up keys
+            if (e.key === 'AudioVolumeUp' || e.key === 'VolumeUp' || e.key === 'PageUp' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const app = document.getElementById('app');
+                app.scrollBy({ top: -(window.innerHeight * 0.75), behavior: 'smooth' });
+            } 
+            // Map common scroll-down keys
+            else if (e.key === 'AudioVolumeDown' || e.key === 'VolumeDown' || e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === ' ') {
+                e.preventDefault();
+                const app = document.getElementById('app');
+                app.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
+            }
+        });
+
+        function showContextMenu(e, cbzPath, isContainer) {
+            if (isContainer) e.stopPropagation();
+            e.preventDefault();
+            contextTargetCbz = cbzPath;
+            const menu = document.getElementById('context-menu');
+            
+            const readData = getReadIssues();
+            const isRead = !!readData[cbzPath];
+
+            document.getElementById('ctx-read').style.display = isRead ? 'none' : 'block';
+            document.getElementById('ctx-unread').style.display = isRead ? 'block' : 'none';
+
+            menu.style.left = `${e.pageX}px`;
+            menu.style.top = `${e.pageY}px`;
+            menu.style.display = 'block';
+        }
+
+        function setReadStatus(isRead) {
+            if (contextTargetCbz) {
+                markIssue(contextTargetCbz, isRead);
+                if (currentSeriesIndex >= 0) renderSeries(currentSeriesIndex);
+            }
+        }
+
+        let isBookshelfView = true;
+        
+        function toggleBookshelfView() {
+            isBookshelfView = !isBookshelfView;
+            const btn = document.getElementById('toggle-bookshelf-btn');
+            if (isBookshelfView) {
+                btn.innerText = "Regular View";
+            } else {
+                btn.innerText = "Bookshelf View";
+            }
+            if (currentCollectionIndex >= 0) {
+                renderCollection(currentCollectionIndex);
+            }
+        }
+
+        // -------------------------
+        // SPINE RENDERER helper
+        // -------------------------
+        function getSafeOverride(arrStr, index) {
+            if (!arrStr) return null;
+            let arr = Array.isArray(arrStr) ? arrStr : arrStr.split('|').map(s=>s.trim());
+            return arr[index] || null;
+        }
+
+        function createSpineHTML(collection, series, index, overrideConfig = null) {
+            const config = overrideConfig || collection.spineConfig || {};
+            
+            // Width Mode
+            let widthMode = config.widthMode || 'auto';
+            let width = '70px';
+            if (widthMode === 'auto') {
+                const count = series.issues ? series.issues.length : 1;
+                width = Math.min(220, Math.max(45, 30 + (count * 3))) + 'px';
+            } else if (widthMode === 'manual') {
+                width = getSafeOverride(config.manualWidths, index) || '70px';
+                if (!width.includes('px') && !width.includes('rem') && !width.includes('em')) width += 'px';
+            }
+
+            // Title
+            let titleStr = getSafeOverride(config.titleOverrides, index);
+            if (!titleStr) {
+                titleStr = (config.titleTemplate || '$Title').replace('$Title', series.title);
+            }
+
+            // Author
+            let authorStr = getSafeOverride(config.authorOverrides, index);
+            if (!authorStr && config.authorTemplate) {
+                authorStr = config.authorTemplate;
+                const authors = series.authors || [];
+                const pencillers = series.pencillers || [];
+                authorStr = authorStr.replace(/\$Author\[(\d+)\]/g, (m, p1) => authors[parseInt(p1)] || '');
+                authorStr = authorStr.replace(/\$Penciller\[(\d+)\]/g, (m, p1) => pencillers[parseInt(p1)] || '');
+                authorStr = authorStr.replace(/\|\s*$/g, '').replace(/^\s*\|/g, '').trim(); 
+            }
+
+            // Numbers
+            let numStr = getSafeOverride(config.customNumbers, index);
+            if (!numStr && config.numberingStyle && config.numberingStyle !== 'none') {
+                const num = index + 1;
+                if (config.numberingStyle === 'hash') numStr = `#${num}`;
+                else if (config.numberingStyle === 'vol') numStr = `Vol ${num}`;
+                else if (config.numberingStyle === 'book') numStr = `Bk ${num}`;
+            }
+
+            // Background
+            let bg = getSafeOverride(config.spineBgOverrides, index);
+            let useBaseColorClass = false;
+            if (!bg) {
+                bg = config.spineBackground || '';
+            }
+            if (!bg) {
+                useBaseColorClass = true; // Fall back to `.color-x` CSS
+            }
+
+            // Fonts & Type
+            const fs = config.fontSettings || {};
+            const isGoogleFont = config.fontFamily && config.fontFamily.includes('http');
+            let fontFamilyName = config.fontFamily || '';
+            
+            if (isGoogleFont) {
+                const parts = config.fontFamily.split('|').map(p=>p.trim());
+                if (parts.length > 1) {
+                    const fontUrl = parts[0];
+                    fontFamilyName = parts[1];
+                    if (!document.getElementById('font-' + fontFamilyName.replace(/\s+/g,''))) {
+                        const link = document.createElement('link');
+                        link.id = 'font-' + fontFamilyName.replace(/\s+/g,'');
+                        link.rel = 'stylesheet';
+                        link.href = fontUrl;
+                        document.head.appendChild(link);
+                    }
+                } else {
+                    // Raw name if split didn't work
+                    fontFamilyName = '';
+                }
+            }
+
+            const book = document.createElement('div');
+            book.className = useBaseColorClass ? `book-spine color-${index % 7}` : 'book-spine';
+            book.draggable = true;
+            
+            // Root attributes
+            book.style.width = width;
+            book.style.minWidth = width;
+            if (!useBaseColorClass && bg) {
+                book.style.background = bg;
+            }
+            if (config.customCss) {
+                book.style.cssText += ';' + config.customCss;
+            }
+
+            const textStyle = `
+                color: ${fs.color || '#fff'};
+                font-size: ${fs.size || '1.1rem'};
+                font-weight: ${fs.weight || 'normal'};
+                font-family: ${fontFamilyName ? `'${fontFamilyName}', sans-serif` : 'inherit'};
+            `;
+
+            book.innerHTML = `
+                <div class="spine-content" style="${textStyle}; display: flex; flex-direction: column; align-items: center; justify-content: space-between; height: 100%; width: 100%; box-sizing: border-box; text-orientation: mixed;">
+                    <span class="spine-number" style="margin-top: 5px; transform: rotate(90deg); writing-mode: horizontal-tb; font-weight: bold;">${numStr || ''}</span>
+                    <span class="bookshelf-title-text" style="flex:1; display:flex; align-items:center; justify-content:center;">${titleStr}</span>
+                    <span class="spine-author" style="margin-bottom: 5px; opacity: 0.8; font-size: 0.8em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-height: 40px; padding: 2px;">${authorStr || ''}</span>
+                </div>
+            `;
+            return book;
+        }
+
+        // -------------------------
+        // SPINE EDITOR LOGIC
+        // -------------------------
+        function openSpineEditor(collectionIndex) {
+            editorActiveCollectionIndex = collectionIndex;
+            
+            // Deep clone local configuration config
+            const collection = libraryData[collectionIndex];
+            const baseConfig = collection.spineConfig || {};
+            // Setup defaults so objects exist
+            editorLiveConfig = {
+                widthMode: baseConfig.widthMode || 'auto',
+                manualWidths: baseConfig.manualWidths ? (Array.isArray(baseConfig.manualWidths) ? baseConfig.manualWidths.join('|') : baseConfig.manualWidths) : '',
+                titleTemplate: baseConfig.titleTemplate || '$Title',
+                titleOverrides: baseConfig.titleOverrides ? (Array.isArray(baseConfig.titleOverrides) ? baseConfig.titleOverrides.join('|') : baseConfig.titleOverrides) : '',
+                numberingStyle: baseConfig.numberingStyle || 'none',
+                customNumbers: baseConfig.customNumbers ? (Array.isArray(baseConfig.customNumbers) ? baseConfig.customNumbers.join('|') : baseConfig.customNumbers) : '',
+                authorTemplate: baseConfig.authorTemplate || '$Author[0] | $Penciller[0]',
+                authorOverrides: baseConfig.authorOverrides ? (Array.isArray(baseConfig.authorOverrides) ? baseConfig.authorOverrides.join('|') : baseConfig.authorOverrides) : '',
+                fontFamily: baseConfig.fontFamily || '',
+                fontSettings: Object.assign({ color: '#ffffff', size: '1.1rem', weight: 'bold' }, baseConfig.fontSettings || {}),
+                spineBackground: baseConfig.spineBackground || '',
+                spineBgOverrides: baseConfig.spineBgOverrides ? (Array.isArray(baseConfig.spineBgOverrides) ? baseConfig.spineBgOverrides.join('|') : baseConfig.spineBgOverrides) : '',
+                customCss: baseConfig.customCss || ''
+            };
+
+            // Bind values to UI
+            document.getElementById('spine-widthMode').value = editorLiveConfig.widthMode;
+            document.getElementById('spine-manualWidths').value = editorLiveConfig.manualWidths;
+            document.getElementById('spine-titleTemplate').value = editorLiveConfig.titleTemplate;
+            document.getElementById('spine-titleOverrides').value = editorLiveConfig.titleOverrides;
+            document.getElementById('spine-numberingStyle').value = editorLiveConfig.numberingStyle;
+            document.getElementById('spine-customNumbers').value = editorLiveConfig.customNumbers;
+            document.getElementById('spine-authorTemplate').value = editorLiveConfig.authorTemplate;
+            document.getElementById('spine-authorOverrides').value = editorLiveConfig.authorOverrides;
+            
+            // Font parsing (Google 'url | name' structure)
+            if (editorLiveConfig.fontFamily.includes('|')) {
+                const parts = editorLiveConfig.fontFamily.split('|');
+                document.getElementById('spine-fontUrl').value = parts[0].trim();
+                document.getElementById('spine-fontFamily').value = parts[1].trim();
+            } else {
+                document.getElementById('spine-fontUrl').value = '';
+                document.getElementById('spine-fontFamily').value = editorLiveConfig.fontFamily;
+            }
+
+            document.getElementById('spine-fontColor').value = editorLiveConfig.fontSettings.color;
+            document.getElementById('spine-fontSize').value = editorLiveConfig.fontSettings.size;
+            
+            document.getElementById('spine-bg').value = editorLiveConfig.spineBackground;
+            document.getElementById('spine-bgOverrides').value = editorLiveConfig.spineBgOverrides;
+            document.getElementById('spine-customCss').value = editorLiveConfig.customCss;
+
+            document.getElementById('manual-widths-group').style.display = editorLiveConfig.widthMode === 'manual' ? 'block' : 'none';
+
+            // Show window and preview
+            document.getElementById('spine-editor-screen').classList.add('active');
+            renderSpinePreview();
+        }
+
+        function closeSpineEditor() {
+            document.getElementById('spine-editor-screen').classList.remove('active');
+            editorActiveCollectionIndex = -1;
+        }
+
+        function renderSpinePreview() {
+            if (editorActiveCollectionIndex < 0) return;
+            
+            // Read all fields from UI
+            editorLiveConfig.widthMode = document.getElementById('spine-widthMode').value;
+            editorLiveConfig.manualWidths = document.getElementById('spine-manualWidths').value;
+            editorLiveConfig.titleTemplate = document.getElementById('spine-titleTemplate').value;
+            editorLiveConfig.titleOverrides = document.getElementById('spine-titleOverrides').value;
+            editorLiveConfig.numberingStyle = document.getElementById('spine-numberingStyle').value;
+            editorLiveConfig.customNumbers = document.getElementById('spine-customNumbers').value;
+            editorLiveConfig.authorTemplate = document.getElementById('spine-authorTemplate').value;
+            editorLiveConfig.authorOverrides = document.getElementById('spine-authorOverrides').value;
+            
+            const fontUrl = document.getElementById('spine-fontUrl').value.trim();
+            const fontName = document.getElementById('spine-fontFamily').value.trim();
+            if (fontUrl && fontName) editorLiveConfig.fontFamily = fontUrl + ' | ' + fontName;
+            else editorLiveConfig.fontFamily = fontName;
+
+            editorLiveConfig.fontSettings.color = document.getElementById('spine-fontColor').value;
+            editorLiveConfig.fontSettings.size = document.getElementById('spine-fontSize').value;
+            
+            editorLiveConfig.spineBackground = document.getElementById('spine-bg').value;
+            editorLiveConfig.spineBgOverrides = document.getElementById('spine-bgOverrides').value;
+            editorLiveConfig.customCss = document.getElementById('spine-customCss').value;
+
+            document.getElementById('manual-widths-group').style.display = editorLiveConfig.widthMode === 'manual' ? 'block' : 'none';
+
+            const container = document.getElementById('spine-editor-preview-container');
+            container.innerHTML = '';
+
+            const collection = libraryData[editorActiveCollectionIndex];
+            if (collection.seriesIds && collection.seriesIds.length > 0) {
+                collection.seriesIds.forEach((seriesIdStr, i) => {
+                    const seriesIdx = parseInt(seriesIdStr);
+                    if (seriesIdx >= 0 && seriesIdx < libraryData.length) {
+                        const series = libraryData[seriesIdx];
+                        const bookNode = createSpineHTML(collection, series, i, editorLiveConfig);
+                        // Strip draggable in preview
+                        bookNode.draggable = false;
+                        container.appendChild(bookNode);
+                    }
+                });
+            }
+        }
+        
+        async function saveSpineEditorChanges() {
+            if (editorActiveCollectionIndex < 0) return;
+
+            const collection = libraryData[editorActiveCollectionIndex];
+            
+            // Explode piping back into clean arrays before saving config JSON
+            const saveReadyConfig = JSON.parse(JSON.stringify(editorLiveConfig));
+            const explode = (str) => {
+                if (!str) return [];
+                return str.split('|').map(s=>s.trim());
+            };
+
+            saveReadyConfig.manualWidths = explode(saveReadyConfig.manualWidths);
+            saveReadyConfig.titleOverrides = explode(saveReadyConfig.titleOverrides);
+            saveReadyConfig.customNumbers = explode(saveReadyConfig.customNumbers);
+            saveReadyConfig.authorOverrides = explode(saveReadyConfig.authorOverrides);
+            saveReadyConfig.spineBgOverrides = explode(saveReadyConfig.spineBgOverrides);
+
+            // Update main JS cache so immediate views look right
+            collection.spineConfig = saveReadyConfig;
+
+            try {
+                // To keep seriesOrder, characters, etc intact, we MUST fetch everything
+                // However, python endpoint '/api/saveconfig' blindly dumps what we send as config.json.
+                // So we send the same exact structure as drag and drop did, plus spineConfig!
+                
+                const res = await fetch('/api/saveconfig', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        folder: "collections/" + collection.folderName,
+                        config: {
+                            name: collection.title,
+                            description: collection.description,
+                            run: collection.run,
+                            coverImage: collection.coverImage,
+                            bannerImage: collection.bannerImage,
+                            characters: collection.characters || [],
+                            seriesOrder: collection.seriesIds.map(idxStr => libraryData[parseInt(idxStr)].folderName),
+                            spineConfig: saveReadyConfig // Our new block
+                        }
+                    })
+                });
+                 
+                if (res.ok) {
+                    console.log("Bookshelf UI Saved!");
+                    closeSpineEditor();
+                    renderCollection(editorActiveCollectionIndex);
+                }
+            } catch(e) {
+                 console.error('Error saving spine config', e);
+            }
+        }
+
+        // -------------------------
+        // RENDER HOMESCREEN & SEARCH
+        // -------------------------
+        function filterHome(query) {
+            renderHome(query);
+        }
+
+        function renderHome(query = "") {
+            const container = document.getElementById('series-list');
+            container.innerHTML = '';
+            
+            const lowerQuery = query.toLowerCase();
+
+            libraryData.forEach((item, index) => {
+                // If it's a series and it's inside a collection, we hide it from the main home screen
+                if (item.type === 'series') {
+                    // Check if any collection contains this series
+                    const isInCollection = libraryData.some(col => 
+                        col.type === 'collection' && 
+                        col.seriesIds && 
+                        col.seriesIds.includes(index.toString())
+                    );
+                    
+                    if (isInCollection) {
+                        return; // Skip this series
+                    }
+                }
+                
+                const searchString = `
+                    ${item.title || ''} 
+                    ${item.description || ''} 
+                    ${(item.characters || []).join(' ')} 
+                    ${(item.genres || []).join(' ')} 
+                    ${(item.creators || []).join(' ')}
+                `.toLowerCase();
+
+                if (lowerQuery && !searchString.includes(lowerQuery)) {
+                    return; // Skip if no match
+                }
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                // Add collection badge if it's a collection
+                if (item.type === 'collection') {
+                    card.classList.add('collection-card');
+                }
+                
+                let coverSrc = "https://via.placeholder.com/220x330/1a1a1a/e50914?text=No+Cover";
+                if (item.coverImage) {
+                    coverSrc = item.folderName + "/" + item.coverImage;
+                } else if (item.type === 'series' && item.issues && item.issues.length > 0 && item.issues[0].cover) {
+                    coverSrc = item.issues[0].cover;
+                } else if (item.type === 'collection' && item.seriesIds && item.seriesIds.length > 0) {
+                    // Get the first series' first issue cover
+                    const firstSeriesIdx = parseInt(item.seriesIds[0]);
+                    if (firstSeriesIdx >= 0 && firstSeriesIdx < libraryData.length) {
+                        const firstSeries = libraryData[firstSeriesIdx];
+                        if (firstSeries.issues && firstSeries.issues.length > 0 && firstSeries.issues[0].cover) {
+                            coverSrc = firstSeries.issues[0].cover;
+                        }
+                    }
+                }
+
+                const issueCount = item.type === 'collection' 
+                    ? `${(item.seriesIds || []).length} Series`
+                    : `${(item.issues || []).length} Issues`;
+
+                const badge = item.type === 'collection' ? '<span style="position: absolute; top: 10px; right: 10px; background: #ff9800; color: white; padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; font-weight: bold;">COLLECTION</span>' : '';
+
+                card.innerHTML = `
+                    <div class="card-img-container" style="position: relative;">
+                        ${badge}
+                        <img src="${coverSrc}" alt="Cover" loading="lazy">
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">${item.title}</div>
+                        ${item.run ? `<div class="card-run">${item.run}</div>` : ''}
+                        <div class="card-date">${issueCount}</div>
+                    </div>
+                `;
+                // ROUTE CHANGE INSTEAD OF JS FUNCTION
+                card.onclick = () => { 
+                    // Save scroll position before leaving this series view
+                    if (currentSeriesIndex >= 0) saveSeriesScrollPos(currentSeriesIndex);
+                    
+                    if (item.type === 'collection') {
+                        window.location.hash = `collection/${index}`;
+                    } else {
+                        window.location.hash = `series/${index}`;
+                    }
+                };
+                container.appendChild(card);
+            });
+        }
+
+        // -------------------------
+        // RENDER COLLECTION PAGE (Bookshelf UI)
+        // -------------------------
+        function renderCollection(collectionIndex) {
+            const collection = libraryData[collectionIndex];
+            const banner = document.getElementById('series-banner');
+            
+            document.getElementById('series-title').innerText = collection.title;
+            document.getElementById('series-desc').innerText = collection.description;
+            document.getElementById('series-author').innerText = collection.authors ? "By: " + collection.authors.join(', ') : '';
+            const p = collection.pencillers
+            document.getElementById('series-penciller').innerText = p && p.length > 0
+                ? `${p.length > 1 ? 'Pencillers' : 'Penciller'}: ${p.join(', ')}`
+                : '';
+
+            // UI configuration
+            document.getElementById('series-sort-label').style.display = 'none';
+            document.getElementById('series-sort').style.display = 'none';
+            document.getElementById('toggle-bookshelf-btn').style.display = 'inline-block';
+            document.getElementById('toggle-bookshelf-btn').innerText = isBookshelfView ? "Regular View" : "Bookshelf View";
+            
+            // Show spine editor button if in bookshelf view
+            let editSpineBtn = document.getElementById('edit-spine-btn');
+            if (!editSpineBtn) {
+                editSpineBtn = document.createElement('button');
+                editSpineBtn.id = 'edit-spine-btn';
+                editSpineBtn.style.cssText = "margin-left: 10px; padding: 10px 20px; font-weight: bold; border-radius: var(--btn-radius, 5px); cursor: pointer; border: none; background: #2F4F4F; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2);";
+                editSpineBtn.innerText = "Edit Spines";
+                document.getElementById('toggle-bookshelf-btn').parentNode.appendChild(editSpineBtn);
+            }
+            editSpineBtn.style.display = isBookshelfView ? 'inline-block' : 'none';
+            editSpineBtn.onclick = () => openSpineEditor(collectionIndex);
+
+            const runEl = document.getElementById('series-run');
+            if (collection.run) {
+                runEl.style.display = 'inline-block';
+                runEl.innerText = `${collection.run}`;
+            } else {
+                runEl.style.display = 'none';
+            }
+
+            // Setup banner image
+            if (collection.bannerImage) {
+                banner.style.backgroundImage = `url("${collection.folderName}/${collection.bannerImage}")`;
+                banner.style.backgroundColor = "rgba(0,0,0,0.6)";
+            } else if (collection.seriesIds && collection.seriesIds.length > 0) {
+                const firstSeriesIdx = parseInt(collection.seriesIds[0]);
+                if (firstSeriesIdx >= 0 && firstSeriesIdx < libraryData.length) {
+                    const firstSeries = libraryData[firstSeriesIdx];
+                    if (firstSeries.issues && firstSeries.issues.length > 0 && firstSeries.issues[0].cover) {
+                        banner.style.backgroundImage = `url("${firstSeries.issues[0].cover}")`;
+                        banner.style.backgroundColor = "rgba(10,10,10,0.85)";
+                    }
+                }
+            } else {
+                banner.style.backgroundImage = "none";
+                banner.style.backgroundColor = "#222";
+            }
+            
+            const container = document.getElementById('issues-list');
+            if (isBookshelfView) {
+                container.className = 'bookshelf'; 
+            } else {
+                container.className = 'grid-container';
+            }
+            container.innerHTML = '';
+            
+            // Display all sub-series from seriesIds
+            if (collection.seriesIds && collection.seriesIds.length > 0) {
+                collection.seriesIds.forEach((seriesIdStr, indexPosition) => {
+                    const seriesIdx = parseInt(seriesIdStr);
+                    if (seriesIdx >= 0 && seriesIdx < libraryData.length) {
+                        const series = libraryData[seriesIdx];
+                        
+                        if (isBookshelfView) {
+                            const book = createSpineHTML(collection, series, indexPosition);
+                            book.dataset.idx = seriesIdStr; // Keep track of the original seriesId
+                            
+                            // Click to navigate
+                            book.onclick = () => {
+                                container.className = 'grid-container'; // Restore grid-container for generic routes
+                                window.location.hash = `collection/${collectionIndex}/series/${seriesIdx}`;
+                            };
+                            
+                            // Drag and Drop Logic
+                            book.addEventListener('dragstart', (e) => {
+                                e.dataTransfer.setData('text/plain', seriesIdStr);
+                                book.classList.add('dragging');
+                            });
+                            
+                            book.addEventListener('dragend', () => {
+                                book.classList.remove('dragging');
+                                saveBookshelfOrder(collectionIndex);
+                            });
+                            
+                            container.appendChild(book);
+                        } else {
+                            const card = document.createElement('div');
+                            card.className = 'card';
+                            
+                            let coverSrc = "https://via.placeholder.com/220x330/1a1a1a/e50914?text=No+Cover";
+                            if (series.coverImage) {
+                                coverSrc = series.folderName + "/" + series.coverImage;
+                            } else if (series.issues && series.issues.length > 0 && series.issues[0].cover) {
+                                coverSrc = series.issues[0].cover;
+                            }
+            
+                            const issueCount = `${(series.issues || []).length} Issues`;
+            
+                            card.innerHTML = `
+                                <div class="card-img-container">
+                                    <img src="${coverSrc}" alt="Cover" loading="lazy">
+                                </div>
+                                <div class="card-info">
+                                    <div class="card-title">${series.title}</div>
+                                    ${series.run ? `<div class="card-run">${series.run}</div>` : ''}
+                                    <div class="card-date">${issueCount}</div>
+                                </div>
+                            `;
+                            
+                            card.onclick = () => { 
+                                if (currentCollectionIndex >= 0) saveSeriesScrollPos(currentCollectionIndex);
+                                window.location.hash = `collection/${collectionIndex}/series/${seriesIdx}`;
+                            };
+                            
+                            container.appendChild(card);
+                        }
+                    }
+                });
+                
+                if (isBookshelfView) {
+                    // Allow bookshelf to accept drops
+                    container.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        const afterElement = getDragAfterElement(container, e.clientX);
+                        const draggable = document.querySelector('.dragging');
+                        if (draggable) {
+                            if (afterElement == null) {
+                                container.appendChild(draggable);
+                            } else {
+                                container.insertBefore(draggable, afterElement);
+                            }
+                        }
+                    });
+                }
+            }
+            
+            showView('series-screen');
+        }
+        
+        function getDragAfterElement(container, x) {
+            const draggableElements = [...container.querySelectorAll('.book-spine:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = x - box.left - box.width / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+        
+        async function saveBookshelfOrder(collectionIndex) {
+            const collection = libraryData[collectionIndex];
+            const container = document.getElementById('issues-list');
+            
+            // Get current series indices in the new order
+            const newIndexOrder = [...container.querySelectorAll('.book-spine')]
+                 .map(spine => spine.dataset.idx);
+            
+            // Get folderNames corresponding to those indices
+            const newFolderOrder = newIndexOrder.map(idxStr => {
+                 const idx = parseInt(idxStr);
+                 return libraryData[idx].folderName;
+            });
+            
+            // Re-assign the indices back locally so the UI doesn't break
+            collection.seriesIds = newIndexOrder;
+            
+            try {
+                 const res = await fetch('/api/saveconfig', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                         folder: "collections/" + collection.folderName,
+                         config: {
+                              name: collection.title,
+                              description: collection.description,
+                              run: collection.run,
+                              coverImage: collection.coverImage,
+                              bannerImage: collection.bannerImage,
+                              characters: collection.characters || [],
+                              seriesOrder: newFolderOrder,
+                              spineConfig: collection.spineConfig || {}
+                         }
+                      })
+                 });
+                 if (res.ok) console.log("Bookshelf order saved!");
+            } catch(e) {
+                 console.error('Error saving order', e);
+            }
+        }
+
+        // -------------------------
+        // RENDER ISSUES PAGE
+        // -------------------------
+        function renderSeries(index) {
+            const series = libraryData[index];
+            const banner = document.getElementById('series-banner');
+            const readData = getReadIssues();
+            
+            document.getElementById('series-title').innerText = series.title;
+            document.getElementById('series-desc').innerText = series.description;
+            document.getElementById('series-author').innerText = series.authors ? "By: " + series.authors.join(', ') : '';
+            const p = series.pencillers
+            document.getElementById('series-penciller').innerText = p && p.length > 0
+                ? `${p.length > 1 ? 'Pencillers' : 'Penciller'}: ${p.join(', ')}`
+                : '';
+            
+            // UI configuration
+            document.getElementById('series-sort-label').style.display = 'inline-block';
+            document.getElementById('series-sort').style.display = 'inline-block';
+            document.getElementById('toggle-bookshelf-btn').style.display = 'none';
+            const editSpineBtn = document.getElementById('edit-spine-btn');
+            if (editSpineBtn) editSpineBtn.style.display = 'none';
+
+            const runEl = document.getElementById('series-run');
+            if (series.run) {
+                runEl.style.display = 'inline-block';
+                runEl.innerText = `${series.run}`;
+            } else {
+                runEl.style.display = 'none';
+            }
+
+            // Setup banner image
+            if (series.bannerImage) {
+                banner.style.backgroundImage = `url("${series.folderName}/${series.bannerImage}")`;
+                banner.style.backgroundColor = "rgba(0,0,0,0.6)"; // Dim overlay
+            } else if (series.issues.length > 0 && series.issues[0].cover) {
+                banner.style.backgroundImage = `url("${series.issues[0].cover}")`;
+                banner.style.backgroundColor = "rgba(10,10,10,0.85)"; // Dim heavily
+            } else {
+                banner.style.backgroundImage = "none";
+                banner.style.backgroundColor = "#222";
+            }
+            
+            const container = document.getElementById('issues-list');
+            container.className = 'grid-container'; // Ensure we are NOT showing the bookshelf UI here
+            container.innerHTML = '';
+            
+            // Map Original Indexes to issues so we click the right one!
+            let issuesMapped = series.issues.map((issue, realIndex) => ({
+                issue: issue,
+                realIndex: realIndex
+            }));
+
+            // Handle Sorting!
+            const sortVal = document.getElementById('series-sort').value;
+            issuesMapped.sort((a, b) => {
+                if (sortVal === 'date-asc') {
+                    if (a.issue.date === b.issue.date) return a.issue.name.localeCompare(b.issue.name, undefined, {numeric: true});
+                    return (a.issue.date || '99999999').localeCompare((b.issue.date || '99999999'));
+                } else if (sortVal === 'date-desc') {
+                    if (a.issue.date === b.issue.date) return a.issue.name.localeCompare(b.issue.name, undefined, {numeric: true});
+                    return (b.issue.date || '00000000').localeCompare((a.issue.date || '00000000'));
+                } else { // title-asc
+                    return a.issue.name.localeCompare(b.issue.name, undefined, {numeric: true});
+                }
+            });
+            
+            issuesMapped.forEach(({issue, realIndex}) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                // Add read CSS hook if seen
+                if (readData[issue.comic]) card.classList.add('read');
+
+                const prettyDate = formatDate(issue.date);
+                const coverImg = issue.cover ? issue.cover : "https://via.placeholder.com/220x330/1a1a1a/e50914?text=Reading...";
+                const pageCountStr = issue.pages ? `${issue.pages} Pages` : '';
+
+                card.innerHTML = `
+                    <div class="card-img-container">
+                        <img src="${encodeURI(coverImg)}" loading="lazy">
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">${issue.name}</div>
+                        ${prettyDate ? `<div class="card-date">${prettyDate}</div>` : ''}
+                        ${pageCountStr ? `<div class="card-date" style="opacity: 0.8; margin-top: 2px;">${pageCountStr}</div>` : ''}
+                    </div>
+                `;
+                
+                    // ROUTING SYSTEM: Use hash to jump
+                    card.onclick = () => { 
+                        saveSeriesScrollPos(index);
+                        if (currentCollectionIndex >= 0) {
+                            window.location.hash = `reader/collection/${currentCollectionIndex}/${index}/${realIndex}`;
+                        } else {
+                            window.location.hash = `reader/${index}/${realIndex}`;
+                        }
+                    };
+                
+                // Context Menu Right Click
+                card.oncontextmenu = (e) => showContextMenu(e, issue.comic, false);
+
+                container.appendChild(card);
+            });
+            
+            showView('series-screen');
+        }
+
+        // ==========================================
+        //  CBZ LOGIC (Directly parsing .zip files)
+        // ==========================================
+        function getNextIssueHash() {
+            if (currentSeriesIndex < 0 || currentIssueIndex < 0) return null;
+            const series = libraryData[currentSeriesIndex];
+            
+            // We want chronological order to guarantee reading sequence
+            let chronoSorted = series.issues.map((iss, idx) => ({iss, idx}));
+            chronoSorted.sort((a,b) => {
+                if (a.iss.date === b.iss.date) return a.iss.name.localeCompare(b.iss.name, undefined, {numeric: true});
+                return (a.iss.date || '99999999').localeCompare((b.iss.date || '99999999'));
+            });
+            
+            const currIdxInChrono = chronoSorted.findIndex(item => item.idx === currentIssueIndex);
+            if (currIdxInChrono >= 0 && currIdxInChrono < chronoSorted.length - 1) {
+                const nextIssueIdx = chronoSorted[currIdxInChrono + 1].idx;
+                if (currentCollectionIndex >= 0) {
+                    return `reader/collection/${currentCollectionIndex}/${currentSeriesIndex}/${nextIssueIdx}`;
+                } else {
+                    return `reader/${currentSeriesIndex}/${nextIssueIdx}`;
+                }
+            }
+            return null;
+        }
+
+        function goToNextIssue() {
+            const nextHash = getNextIssueHash();
+            if (nextHash) window.location.hash = nextHash;
+        }
+
+        async function openComicReader(comicFilePath) {
+            showView('reader-screen');
+            // Check off this issue immediately!
+            markIssue(comicFilePath, true);
+
+            document.getElementById('comic-container').innerHTML = '';
+            document.getElementById('loading-text').style.display = 'block';
+            document.getElementById('loading-text').innerText = "Extracting Issue dynamically, please wait...";
+            document.getElementById('reader-controls').style.display = 'none'; // hide back button momentarily
+
+            // Reject CBR immediately with helpful advice, instead of crashing JSZip
+            if (comicFilePath.toLowerCase().endsWith('.cbr')) {
+                 document.getElementById('loading-text').innerHTML = `
+                    <div style="color: #ff4c4c; max-width: 600px; margin: 0 auto; text-align: left;">
+                        <h2>Unsupported Format: CBR</h2>
+                        <p>CBR files are RAR archives, which are not currently supported natively by the browser's decompression engine.</p>
+                        <p>Please convert your <strong>.cbr</strong> files to <strong>.cbz</strong> (ZIP format) by either:</p>
+                        <ul>
+                            <li>Extracting the RAR and re-zipping the folder as .zip, then renaming to .cbz</li>
+                            <li>Using a software like 7-Zip or WinRAR to extract and compress to .zip -> .cbz</li>
+                        </ul>
+                    </div>
+                 `;
+                 document.getElementById('reader-controls').style.display = 'flex';
+                 return;
+            }
+
+            try {
+                // Fetch binary comic file (CBZ or CBR - both are ZIP archives) directly from the python local server
+                const response = await fetch(encodeURI(comicFilePath));
+                if (!response.ok) throw new Error("Network response was not ok");
+                const arrayBuffer = await response.arrayBuffer();
+
+                // Unzip purely in Memory using JSZip!
+                const jsZip = new JSZip();
+                const zip = await jsZip.loadAsync(arrayBuffer);
+
+                // Find only images, ignore XML or text
+                const imageFiles = [];
+                zip.forEach((relativePath, zipEntry) => {
+                    if (relativePath.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
+                        imageFiles.push(zipEntry);
+                    }
+                });
+
+                // Alphabetical sorting so pages are in correct order!
+                imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+
+                document.getElementById('loading-text').style.display = 'none';
+                const container = document.getElementById('comic-container');
+                
+                const nextHash = getNextIssueHash();
+                const bingeBtn = document.getElementById('binge-btn');
+                const endBingeBtn = document.getElementById('end-binge-btn');
+                
+                bingeBtn.style.display = 'none'; // reset initially
+                endBingeBtn.style.display = nextHash ? 'inline-block' : 'none';
+                
+                // Set up observer for Binge pop-up
+                if (bingeObserver) bingeObserver.disconnect();
+                bingeObserver = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting && nextHash) {
+                        bingeBtn.style.display = 'block';
+                        bingeBtn.style.animation = 'fadeIn 0.5s ease';
+                    }
+                }, { rootMargin: '0px', threshold: 0.1 });
+
+                // Read files directly as base64 / blob
+                let imgCount = 0;
+                for (const file of imageFiles) {
+                    const blobData = await file.async('blob');
+                    const blobUrl = URL.createObjectURL(blobData);
+                    memoryBlobs.push(blobUrl);
+                    
+                    const img = document.createElement('img');
+                    img.src = blobUrl;
+                    img.loading = "lazy";
+                    
+                    container.appendChild(img);
+                    
+                    // Attach Binge observer 5 images from the bottom
+                    if (imgCount === Math.max(0, imageFiles.length - 5)) {
+                        bingeObserver.observe(img);
+                    }
+                    imgCount++;
+                }
+
+                document.getElementById('reader-controls').style.display = 'flex';
+                document.getElementById('app').scrollTo(0, 0);
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('loading-text').innerText = "Error loading comic! See console.";
+                document.getElementById('reader-controls').style.display = 'flex';
+            }
+        }
+
+        // ==========================================
+        //  ROTATION & VIEW CONTROLS
+        // ==========================================
+        let currentFitWidth = false;
+        function toggleFitWidth() {
+            currentFitWidth = !currentFitWidth;
+            document.getElementById('reader-screen').classList.toggle('fit-width', currentFitWidth);
+            document.getElementById('comic-container').classList.toggle('fit-width', currentFitWidth);
+
+            const btn = document.getElementById('fit-width-btn');
+            if (currentFitWidth) {
+                btn.innerText = 'Reset Width';
+                btn.style.backgroundColor = 'var(--accent-color)';
+                btn.style.color = 'var(--badge-text)';
+            } else {
+                btn.innerText = 'Fit Width';
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+            }
+            
+            // Adjust scroll gently so the layout doesn't jolt
+            document.getElementById('app').scrollTo(0, 0);
+        }
+
+        function setRotation(degrees) {
+            const app = document.getElementById('app');
+            app.className = ''; 
+            
+            currentRotation = degrees;
+            document.getElementById('btn-rot-270').classList.remove('active');
+            document.getElementById('btn-rot-0').classList.remove('active');
+            document.getElementById('btn-rot-90').classList.remove('active');
+
+            if (degrees === 90) {
+                app.classList.add('rot-90');
+                document.getElementById('btn-rot-90').classList.add('active');
+            } else if (degrees === -90) {
+                app.classList.add('rot-270');
+                document.getElementById('btn-rot-270').classList.add('active');
+            } else {
+                document.getElementById('btn-rot-0').classList.add('active');
+            }
+        }
+    </script>
+</body>
+</html>
