@@ -17,8 +17,8 @@ import socket
 import threading
 from threading import Timer
 from pathlib import Path
+import urllib.request
 
-# Windows-specific imports for keyboard and registry
 if os.name == 'nt':
     import msvcrt
     import winreg
@@ -34,7 +34,9 @@ C_BOLD = "\033[1m"
 C_END = "\033[0m"
 
 PORT = 8080
+VERSION = "v0.1.0"
 READ_STATUS_FILE = 'readStatus.json'
+PREFS_FILE = 'preferences.json'
 
 # --- UI ASSETS ---
 BIG_NUMS = {
@@ -51,7 +53,35 @@ ASCII_LOGO = (
     f"{C_BLUE}{C_BOLD}" + r"/_/ |_/\__,_/_/_/_/ |_|\___/_/ /_/\__,_/\___/_/      " + f"{C_END}"
 )
 
+# --- Version Check ---
+def check_for_updates():
+    """Fetches latest release tag from GitHub API without external dependencies"""
+    url = "https://api.github.com/repos/broveer/NullReader/releases"
+    try:
+        # GitHub API requires a User-Agent header
+        req = urllib.request.Request(url, headers={'User-Agent': 'NullReader-App'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            if data and isinstance(data, list):
+                # The first item in the list is the latest release
+                latest_tag = data[0].get("tag_name", "")
+                if latest_tag and latest_tag != VERSION:
+                    return latest_tag
+    except Exception:
+        # Silently fail if offline or API is down
+        pass
+    return None
+
 # --- UTILITY FUNCTIONS ---
+
+def load_prefs():
+    default_prefs = {"theme": "default.css", "show_qr": True, "hide_ip": False}
+    if os.path.exists(PREFS_FILE):
+        try:
+            with open(PREFS_FILE, 'r') as f:
+                return {**default_prefs, **json.load(f)}
+        except: pass
+    return default_prefs
 
 def get_browser_name():
     """Identifies the default browser via Windows Registry"""
@@ -64,7 +94,7 @@ def get_browser_name():
         if "Chrome" in prog_id: return "Google Chrome"
         if "Firefox" in prog_id: return "Mozilla Firefox"
         if "MSEdge" in prog_id: return "Microsoft Edge"
-        if "Comet" in prog_id or "Perplexity" in prog_id: return "Comet (Perplexity)"
+        if "Comet" in prog_id or "Perplexity" in prog_id: return "Comet"
         return prog_id.split('.')[-1] if '.' in prog_id else prog_id
     except:
         return "System Default"
@@ -84,13 +114,24 @@ def get_local_ip():
 def show_info_panel():
     """Displays the system dashboard"""
     ip = get_local_ip()
+    network_url = f"http://{ip}:{PORT}"
     browser = get_browser_name()
-    print(f"\n {C_GREEN}🚀{C_END} {C_BOLD}STATUS:{C_END}     {C_GREEN}Online{C_END}")
+    prefs = load_prefs()
+    print(f" {C_GREEN}🚀{C_END} {C_BOLD}STATUS:{C_END}     {C_GREEN}Online{C_END}")
     print(f" {C_BLUE}🔗{C_END} {C_BOLD}LOCAL:{C_END}      {C_CYAN}http://localhost:{PORT}{C_END}")
-    print(f" {C_BLUE}📱{C_END} {C_BOLD}NETWORK:{C_END}    {C_CYAN}http://{ip}:{PORT}{C_END}")
+    if prefs.get("hide_ip"):
+        print(f" {C_BLUE}📱{C_END} {C_BOLD}NETWORK:{C_END}    {C_GRAY}[ Hidden by Preferences ]{C_END}")
+    else:
+        print(f" {C_BLUE}📱{C_END} {C_BOLD}NETWORK:{C_END}    {C_CYAN}{network_url}{C_END}")
     print(f" {C_CYAN}🌐{C_END} {C_BOLD}BROWSER:{C_END}    {C_BOLD}{browser}{C_END}")
     print(f" {C_RED}🛑{C_END} {C_BOLD}STOP:{C_END}       Press {C_RED}Ctrl+C{C_END}")
     print(f" {C_YELLOW}⌨️ {C_END} {C_BOLD}INFO:{C_END}       Press {C_YELLOW}'i'{C_END} to refresh this dashboard")
+    def update_alert_task():
+        new_version = check_for_updates()
+        if new_version:
+            print(f" {C_YELLOW}✨{C_END} {C_BOLD}UPDATE:{C_END}     {C_YELLOW}New Version {new_version} available!{C_END}")
+            print(f" {C_GRAY}│{C_END}           Download: https://github.com/broveer/NullReader/releases")
+    threading.Thread(target=update_alert_task, daemon=True).start()
     print(f"{C_GRAY} ------------------------------------------------{C_END}")
 
 def listen_for_keys():
@@ -102,7 +143,7 @@ def listen_for_keys():
                 os.system('cls' if os.name == 'nt' else 'clear')
                 print(f"{C_GRAY}{ASCII_LOGO}{C_END}")
                 print(f"           {C_GRAY}> Lightweight Comic Reader {C_GRAY}<")
-                print(f"           {C_GRAY}> {C_END}{C_BOLD}SERVER ENGINE{C_END}{C_GRAY} | {C_END}{C_CYAN}v0.1.0{C_END} {C_GRAY}<")
+                print(f"           {C_GRAY}> {C_END}{C_BOLD}SERVER ENGINE{C_END}{C_GRAY} | {C_END}{C_CYAN}{VERSION}{C_END} {C_GRAY}<")
                 show_info_panel()
                 print(f" {C_GRAY}Activity Log:{C_END}")
         time.sleep(0.1)
@@ -195,11 +236,11 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
     # 1. Header
-    print(f"{C_GRAY} ------------------------------------------------{C_END}\n")
+    print(f"{C_GRAY} ------------------------------------------------{C_END}")
     print(f"{C_GRAY}{ASCII_LOGO}{C_END}")
     print(f"          {C_GRAY}>{C_END} Lightweight Comic Reader {C_END}{C_GRAY}<")
-    print(f"           {C_GRAY}> {C_END}{C_BOLD}SERVER ENGINE{C_END}{C_GRAY} | {C_END}{C_CYAN}v0.1.0{C_END} {C_GRAY}<")
-    print(f"{C_GRAY} ------------------------------------------------{C_END}\n")
+    print(f"           {C_GRAY}> {C_END}{C_BOLD}SERVER ENGINE{C_END}{C_GRAY} | {C_END}{C_CYAN}{VERSION}{C_END} {C_GRAY}<")
+    print(f"{C_GRAY} ------------------------------------------------{C_END}")
 
     # 2. Big Countdown (Overwrites itself)
     for num in ['3', '2', '1']:
@@ -211,7 +252,7 @@ if __name__ == '__main__':
 
     # 3. Final Dashboard
     show_info_panel()
-    print(f" {C_GRAY}Activity Log:{C_END}")
+    print(f"\n {C_GRAY}Activity Log:{C_END}")
 
     # 4. Background Tasks
     Timer(1.0, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
