@@ -804,21 +804,18 @@
 
         // Track keys for scrolling (Volume buttons on some mobile browsers, arrows/space for desktop)
         window.addEventListener('keydown', (e) => {
-            if (!document.getElementById('reader-screen').classList.contains('active')) return;
-            
-            // Map common scroll-up keys
-            if (e.key === 'AudioVolumeUp' || e.key === 'VolumeUp' || e.key === 'PageUp' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                const app = document.getElementById('app');
-                app.scrollBy({ top: -(window.innerHeight * 0.75), behavior: 'smooth' });
-            } 
-            // Map common scroll-down keys
-            else if (e.key === 'AudioVolumeDown' || e.key === 'VolumeDown' || e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === ' ') {
-                e.preventDefault();
-                const app = document.getElementById('app');
-                app.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
-            }
-        });
+    if (!document.getElementById('reader-screen').classList.contains('active')) return;
+
+    // NEW: Precision Center-Scrolling for Number Keys
+    if (e.key === '2' || e.key === 'ArrowDown') { // '2' for Next Image Center
+        e.preventDefault();
+        scrollToImageCenter(1);
+    } 
+    else if (e.key === '1' || e.key === 'ArrowUp') { // '1' for Previous Image Center
+        e.preventDefault();
+        scrollToImageCenter(-1);
+    }
+});
 
         function showContextMenu(e, cbzPath, isContainer) {
             if (isContainer) e.stopPropagation();
@@ -1714,6 +1711,36 @@
                 document.getElementById('btn-rot-0').classList.add('active');
             }
         }
+
+        // Navigate to the exact center of an image
+function scrollToImageCenter(direction) {
+    const images = Array.from(document.querySelectorAll('#comic-container img'));
+    if (images.length === 0) return;
+
+    const app = document.getElementById('app');
+    // Calculate where the current center of the screen is relative to the content
+    const viewportCenter = app.scrollTop + (window.innerHeight / 2);
+
+    // Identify which image is currently occupying the center of the screen
+    let currentIndex = images.findIndex(img => {
+        const imgTop = img.offsetTop;
+        const imgBottom = imgTop + img.offsetHeight;
+        return viewportCenter >= imgTop && viewportCenter <= imgBottom;
+    });
+
+    // Fallback logic if the scroll is between images
+    if (currentIndex === -1) {
+        currentIndex = images.findIndex(img => img.offsetTop > viewportCenter) - 1;
+    }
+
+    const targetIndex = Math.max(0, Math.min(images.length - 1, currentIndex + direction));
+    const targetImg = images[targetIndex];
+
+    // The Magic Math: (Image Top + half Image Height) - (half Viewport Height)
+    const targetScroll = targetImg.offsetTop + (targetImg.offsetHeight / 2) - (window.innerHeight / 2);
+
+    app.scrollTo({ top: targetScroll, behavior: 'smooth' });
+}
     </script>
 </body>
 </html>
